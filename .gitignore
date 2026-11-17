@@ -1,0 +1,29 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Environments & virtualenvs
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Logs & temp
+*.log
+*.tmp
+test_*.png
+banner_*.png
+btn_*.png
+stepcard_*.png
+v[0-9]_*.png
+
+# OS / Editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
