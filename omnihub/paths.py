@@ -48,8 +48,9 @@ LOG_FILE = LOG_DIR / "omnihub.log"
 
 #: Icon locations probed at runtime (first hit wins).
 ICON_CANDIDATES = (
-    Path.home() / ".local/share/icons/omnihub.png",
+    Path(__file__).resolve().parent.parent / "assets" / "omnihub.png",
     Path(__file__).resolve().parent.parent / "omnihub.png",
+    Path.home() / ".local/share/icons" / "omnihub.png",
     Path("/usr/share/icons/hicolor/256x256/apps/omnihub.png"),
 )
 

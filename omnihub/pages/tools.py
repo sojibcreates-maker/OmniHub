@@ -612,13 +612,64 @@ class ToolsPage(Page):
         self.text_status.setText(f"{len(output):,} characters")
 
     def _launch(self, command: str, args: list) -> None:
+        import platform
         import shutil
 
-        if not shutil.which(command):
-            self.notify.emit(f"{command} is not installed on this system.", "warning")
-            return
-        try:
-            subprocess.Popen([command, *args], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            self.notify.emit(f"Launched {command}.", "success")
-        except Exception as exc:  # noqa: BLE001
-            self.notify.emit(f"Could not launch {command}: {exc}", "danger")
+        candidates = [command]
+        if command == "deepin-terminal":
+            if platform.system() == "Windows":
+                candidates = ["cmd.exe", "powershell.exe", "wt.exe"]
+            elif platform.system() == "Darwin":
+                try:
+                    subprocess.Popen(["open", "-a", "Terminal"])
+                    self.notify.emit("Launched Terminal.", "success")
+                    return
+                except Exception:
+                    pass
+            else:
+                candidates = ["deepin-terminal", "gnome-terminal", "konsole", "xfce4-terminal", "alacritty", "xterm", "x-terminal-emulator"]
+
+        elif command == "dde-file-manager":
+            if platform.system() == "Windows":
+                candidates = ["explorer.exe"]
+            elif platform.system() == "Darwin":
+                try:
+                    subprocess.Popen(["open", os.path.expanduser("~")])
+                    self.notify.emit("Opened Files.", "success")
+                    return
+                except Exception:
+                    pass
+            else:
+                candidates = ["dde-file-manager", "nautilus", "dolphin", "thunar", "nemo", "xdg-open"]
+
+        elif command == "deepin-system-monitor":
+            if platform.system() == "Windows":
+                candidates = ["taskmgr.exe"]
+            elif platform.system() == "Darwin":
+                try:
+                    subprocess.Popen(["open", "-a", "Activity Monitor"])
+                    self.notify.emit("Launched Activity Monitor.", "success")
+                    return
+                except Exception:
+                    pass
+            else:
+                candidates = ["deepin-system-monitor", "gnome-system-monitor", "plasma-systemmonitor", "htop", "top"]
+
+        elif command == "google-chrome":
+            if platform.system() == "Windows":
+                candidates = ["chrome.exe", "msedge.exe", "firefox.exe"]
+            elif platform.system() == "Darwin":
+                candidates = ["google-chrome", "firefox", "safari"]
+            else:
+                candidates = ["google-chrome", "google-chrome-stable", "chromium", "firefox", "xdg-open"]
+
+        for cand in candidates:
+            if shutil.which(cand):
+                try:
+                    subprocess.Popen([cand, *args], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    self.notify.emit(f"Launched {cand}.", "success")
+                    return
+                except Exception:
+                    continue
+
+        self.notify.emit(f"Could not find an application for {command} on this system.", "warning")

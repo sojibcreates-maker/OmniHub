@@ -65,7 +65,7 @@ class Settings:
 
     def __init__(self, path: os.PathLike | str = SETTINGS_FILE) -> None:
         self._path = os.fspath(path)
-        self._backup_path = os.fspath(SETTINGS_BACKUP)
+        self._backup_path = os.fspath(SETTINGS_BACKUP) if self._path == os.fspath(SETTINGS_FILE) else ""
         self._lock = threading.RLock()
         self._data: Dict[str, Any] = copy.deepcopy(DEFAULTS)
         self._dirty = False
@@ -85,7 +85,10 @@ class Settings:
         """Read settings from disk, falling back to the backup then defaults."""
         with self._lock:
             self._last_error = None
-            for candidate in (self._path, self._backup_path):
+            candidates = [self._path]
+            if self._backup_path:
+                candidates.append(self._backup_path)
+            for candidate in candidates:
                 data = self._read_json(candidate)
                 if data is not None:
                     self._data = self._merge(copy.deepcopy(DEFAULTS), data)
@@ -131,7 +134,7 @@ class Settings:
 
             # Keep a recovery copy of the last known-good revision.
             try:
-                if os.path.exists(self._path):
+                if self._backup_path and os.path.exists(self._path):
                     with open(self._path, "r", encoding="utf-8") as handle:
                         previous = handle.read()
                     with open(self._backup_path, "w", encoding="utf-8") as handle:

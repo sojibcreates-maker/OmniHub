@@ -11,6 +11,9 @@ import json
 import base64
 import subprocess
 import threading
+import platform
+import shutil
+import webbrowser
 import requests
 import psutil
 
@@ -26,14 +29,46 @@ from PyQt5.QtWidgets import (
 )
 
 OMNIROUTE_REPO = "https://github.com/cheaper-inference/OmniRoute.git"
-OMNIROUTE_DIR = "/home/sojiblabs/.gemini/antigravity/scratch/OmniRoute"
+
+def get_default_omniroute_dir():
+    custom_dev = "/home/sojiblabs/.gemini/antigravity/scratch/OmniRoute"
+    if os.path.exists(custom_dev):
+        return custom_dev
+    env_dir = os.environ.get("OMNIROUTE_DIR")
+    if env_dir:
+        return env_dir
+    return os.path.join(os.path.expanduser("~"), ".omniroute")
+
+OMNIROUTE_DIR = get_default_omniroute_dir()
 OMNIROUTE_BASE = "http://localhost:20128"
 OMNIROUTE_HEALTH = f"{OMNIROUTE_BASE}/api/monitoring/health"
 OMNIROUTE_DASHBOARD = f"{OMNIROUTE_BASE}/dashboard"
 OMNIROUTE_CHAT = f"{OMNIROUTE_BASE}/v1/chat/completions"
-CONFIG_DIR = os.path.expanduser("~/.config/omnihub")
+
+def get_default_config_dir():
+    if platform.system() == "Windows":
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+        return os.path.join(base, "OmniHub")
+    elif platform.system() == "Darwin":
+        return os.path.join(os.path.expanduser("~"), "Library", "Application Support", "OmniHub")
+    return os.path.expanduser("~/.config/omnihub")
+
+CONFIG_DIR = get_default_config_dir()
 NOTES_FILE = os.path.join(CONFIG_DIR, "notes.txt")
 os.makedirs(CONFIG_DIR, exist_ok=True)
+
+def get_app_icon_path():
+    base = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(base, "assets", "omnihub.png"),
+        os.path.join(base, "omnihub.png"),
+        os.path.expanduser("~/.local/share/icons/omnihub.png"),
+        "/home/sojiblabs/.local/share/icons/omnihub.png"
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return ""
 
 DEV_NAME = "Md Sojib Hossain"
 DEV_ORG = "SojibLabs"
@@ -60,8 +95,8 @@ class OmniRouteInstallerWorker(QThread):
         if env:
             full_env.update(env)
         local_bin = os.path.expanduser("~/.local/bin")
-        nvm_bin = os.path.expanduser("~/.config/nvm/versions/node/v24.22.3/bin")
-        full_env["PATH"] = f"{local_bin}:{nvm_bin}:{full_env.get('PATH', '')}"
+        sep = ";" if platform.system() == "Windows" else ":"
+        full_env["PATH"] = f"{local_bin}{sep}{full_env.get('PATH', '')}"
 
         proc = subprocess.Popen(
             cmd, shell=True, cwd=cwd, env=full_env,
@@ -80,19 +115,21 @@ class OmniRouteInstallerWorker(QThread):
             self.step_updated.emit(0, "Checking environment & cache permissions...", "#38BDF8")
             self.log_line.emit("=== Step 1/5: System Environment & Pre-flight ===")
 
-            cache_dir = os.path.expanduser("~/.cache")
-            try:
-                os.chmod(cache_dir, 0o700)
-                self.log_line.emit(f"✓ Cache permissions verified: chmod 700 {cache_dir}")
-            except Exception as e:
-                self.log_line.emit(f"! Note on cache permission: {e}")
+            if platform.system() != "Windows":
+                cache_dir = os.path.expanduser("~/.cache")
+                try:
+                    os.makedirs(cache_dir, exist_ok=True)
+                    os.chmod(cache_dir, 0o700)
+                    self.log_line.emit(f"✓ Cache permissions verified: chmod 700 {cache_dir}")
+                except Exception as e:
+                    self.log_line.emit(f"! Note on cache permission: {e}")
 
             rc = self.run_cmd("node -v && git --version && npm -v")
             if rc != 0:
                 self.step_updated.emit(0, "Node.js or Git not ready", "#EF4444")
-                self.finished.emit(False, "Node.js v24 or Git is missing from standard PATH.")
+                self.finished.emit(False, "Node.js (v18+) or Git is missing from standard PATH.")
                 return
-            self.step_updated.emit(0, "✓ Environment Ready (Node v24 + Git)", "#10B981")
+            self.step_updated.emit(0, "✓ Environment Ready (Node + Git)", "#10B981")
             self.progress_val.emit(25)
 
             # Step 2: Download / Clone
@@ -106,7 +143,7 @@ class OmniRouteInstallerWorker(QThread):
                 rc = self.run_cmd("git fetch origin && git pull origin release/v3.8.54 || git pull", cwd=self.target_dir)
             else:
                 os.makedirs(os.path.dirname(self.target_dir), exist_ok=True)
-                rc = self.run_cmd(f"git clone {OMNIROUTE_REPO} {self.target_dir}")
+                rc = self.run_cmd(f"git clone {OMNIROUTE_REPO} \"{self.target_dir}\"")
 
             if rc != 0:
                 self.step_updated.emit(1, "GitHub download failed", "#EF4444")
@@ -134,16 +171,19 @@ class OmniRouteInstallerWorker(QThread):
             env_file = os.path.join(self.target_dir, ".env")
             env_example = os.path.join(self.target_dir, ".env.example")
             if not os.path.exists(env_file) and os.path.exists(env_example):
-                self.run_cmd(f"cp {env_example} {env_file}")
-                self.log_line.emit("✓ Created default .env from .env.example")
+                try:
+                    shutil.copyfile(env_example, env_file)
+                    self.log_line.emit("✓ Created default .env from .env.example")
+                except Exception as e:
+                    self.log_line.emit(f"! Note on creating .env: {e}")
 
             self.run_cmd("npm install keytar --no-save --foreground-scripts", cwd=self.target_dir)
 
-            cli_bin = os.path.join(self.target_dir, "bin/omniroute.mjs")
+            cli_bin = os.path.join(self.target_dir, "bin", "omniroute.mjs")
             target_link = os.path.expanduser("~/.local/bin/omniroute")
-            if os.path.exists(cli_bin):
-                os.chmod(cli_bin, 0o755)
+            if os.path.exists(cli_bin) and platform.system() != "Windows":
                 try:
+                    os.chmod(cli_bin, 0o755)
                     if os.path.islink(target_link) or os.path.exists(target_link):
                         os.remove(target_link)
                     os.symlink(cli_bin, target_link)
@@ -151,9 +191,15 @@ class OmniRouteInstallerWorker(QThread):
                 except Exception as e:
                     self.log_line.emit(f"! Note linking CLI: {e}")
 
-            start_script = os.path.join(self.target_dir, "start-omniroute.sh")
-            with open(start_script, "w") as f:
-                f.write("""#!/usr/bin/env bash
+            if platform.system() == "Windows":
+                start_bat = os.path.join(self.target_dir, "start-omniroute.bat")
+                with open(start_bat, "w", encoding="utf-8") as f:
+                    f.write("@echo off\r\ncd /d \"%~dp0\"\r\nnpm run dev\r\n")
+                self.log_line.emit("✓ Generated start-omniroute.bat launcher script")
+            else:
+                start_script = os.path.join(self.target_dir, "start-omniroute.sh")
+                with open(start_script, "w", encoding="utf-8") as f:
+                    f.write("""#!/usr/bin/env bash
 set -e
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
@@ -162,8 +208,11 @@ export NVM_DIR="$HOME/.config/nvm"
 export PATH="$HOME/.local/bin:$PATH"
 exec npm run dev
 """)
-            os.chmod(start_script, 0o755)
-            self.log_line.emit("✓ Generated start-omniroute.sh executable script")
+                try:
+                    os.chmod(start_script, 0o755)
+                except Exception:
+                    pass
+                self.log_line.emit("✓ Generated start-omniroute.sh executable script")
 
             self.step_updated.emit(3, "✓ Native Modules & Environment Configured", "#10B981")
             self.progress_val.emit(90)
@@ -171,8 +220,11 @@ exec npm run dev
             # Step 5: Start Service & Verify
             self.step_updated.emit(4, "Starting OmniRoute Service on port 20128...", "#38BDF8")
             self.log_line.emit("\n=== Step 5/5: Launching Gateway Service ===")
-            start_cmd = f"cd {self.target_dir} && nohup ./start-omniroute.sh > /dev/null 2>&1 &"
-            subprocess.Popen(start_cmd, shell=True, executable="/bin/bash")
+            if platform.system() == "Windows":
+                subprocess.Popen("npm run dev", shell=True, cwd=self.target_dir)
+            else:
+                start_cmd = f"cd '{self.target_dir}' && nohup ./start-omniroute.sh > /dev/null 2>&1 &"
+                subprocess.Popen(start_cmd, shell=True)
 
             self.log_line.emit("Awaiting health check on http://localhost:20128/api/monitoring/health...")
             healthy = False
@@ -201,6 +253,29 @@ exec npm run dev
             self.finished.emit(False, str(e))
 
 
+def stop_omniroute_processes():
+    stopped = False
+    for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        try:
+            cmdline = " ".join(proc.info['cmdline'] or [])
+            name = (proc.info['name'] or "").lower()
+            if "run-next.mjs" in cmdline or "next-server" in cmdline:
+                proc.terminate()
+                stopped = True
+            elif OMNIROUTE_DIR and OMNIROUTE_DIR in cmdline and "node" in name:
+                proc.terminate()
+                stopped = True
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    if platform.system() != "Windows":
+        try:
+            subprocess.run(["pkill", "-f", "run-next.mjs"], check=False)
+            subprocess.run(["pkill", "-f", "next-server"], check=False)
+        except Exception:
+            pass
+    return stopped
+
+
 class OmniRouteWorker(QThread):
     finished = pyqtSignal(bool, str)
 
@@ -219,23 +294,27 @@ class OmniRouteWorker(QThread):
                 except Exception:
                     pass
 
-                cmd = f"cd {OMNIROUTE_DIR} && nohup ./start-omniroute.sh > /dev/null 2>&1 &"
-                subprocess.Popen(cmd, shell=True, executable="/bin/bash")
+                if platform.system() == "Windows":
+                    subprocess.Popen("npm run dev", shell=True, cwd=OMNIROUTE_DIR)
+                else:
+                    cmd = f"cd '{OMNIROUTE_DIR}' && nohup ./start-omniroute.sh > /dev/null 2>&1 &"
+                    subprocess.Popen(cmd, shell=True)
                 time.sleep(2.5)
                 self.finished.emit(True, "OmniRoute engine launch signal dispatched.")
 
             elif self.action == "stop":
-                subprocess.run(["pkill", "-f", "run-next.mjs"], check=False)
-                subprocess.run(["pkill", "-f", "next-server"], check=False)
+                stop_omniroute_processes()
                 time.sleep(1)
                 self.finished.emit(True, "OmniRoute server process stopped.")
 
             elif self.action == "restart":
-                subprocess.run(["pkill", "-f", "run-next.mjs"], check=False)
-                subprocess.run(["pkill", "-f", "next-server"], check=False)
+                stop_omniroute_processes()
                 time.sleep(1.5)
-                cmd = f"cd {OMNIROUTE_DIR} && nohup ./start-omniroute.sh > /dev/null 2>&1 &"
-                subprocess.Popen(cmd, shell=True, executable="/bin/bash")
+                if platform.system() == "Windows":
+                    subprocess.Popen("npm run dev", shell=True, cwd=OMNIROUTE_DIR)
+                else:
+                    cmd = f"cd '{OMNIROUTE_DIR}' && nohup ./start-omniroute.sh > /dev/null 2>&1 &"
+                    subprocess.Popen(cmd, shell=True)
                 time.sleep(2.5)
                 self.finished.emit(True, "OmniRoute server restarted successfully.")
 
@@ -316,33 +395,67 @@ class DoctorWorker(QThread):
 # ================= Theme Utilities & Vector Logo =================
 
 def detect_system_theme():
-    try:
-        out = subprocess.check_output(
-            ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
-            text=True, stderr=subprocess.DEVNULL
-        ).strip().lower()
-        if "dark" in out:
-            return "dark"
-    except Exception:
-        pass
+    # 1. Windows registry probe
+    if platform.system() == "Windows":
+        try:
+            import winreg
 
-    try:
-        out = subprocess.check_output(
-            ["gsettings", "get", "com.deepin.dde.appearance", "gtk-theme"],
-            text=True, stderr=subprocess.DEVNULL
-        ).strip().lower()
-        if "dark" in out:
-            return "dark"
-    except Exception:
-        pass
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+            )
+            value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+            return "dark" if value == 0 else "light"
+        except Exception:
+            pass
 
+    # 2. macOS defaults probe
+    elif platform.system() == "Darwin":
+        try:
+            out = subprocess.check_output(
+                ["defaults", "read", "-g", "AppleInterfaceStyle"],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            ).strip().lower()
+            if "dark" in out:
+                return "dark"
+            return "light"
+        except Exception:
+            return "light"
+
+    # 3. Linux Desktop probes (GNOME, Deepin, FreeDesktop)
+    else:
+        try:
+            out = subprocess.check_output(
+                ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
+                text=True, stderr=subprocess.DEVNULL
+            ).strip().lower()
+            if "dark" in out:
+                return "dark"
+            elif "light" in out:
+                return "light"
+        except Exception:
+            pass
+
+        try:
+            out = subprocess.check_output(
+                ["gsettings", "get", "com.deepin.dde.appearance", "gtk-theme"],
+                text=True, stderr=subprocess.DEVNULL
+            ).strip().lower()
+            if "dark" in out:
+                return "dark"
+            elif "light" in out:
+                return "light"
+        except Exception:
+            pass
+
+    # 4. Fallback: Qt application palette luminance
     app = QApplication.instance()
     if app:
         bg = app.palette().window().color()
         if bg.lightness() < 128:
             return "dark"
-        else:
-            return "light"
+        return "light"
 
     return "dark"
 
@@ -1048,8 +1161,8 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1100, 760)
         self.resize(1180, 800)
 
-        icon_path = "/home/sojiblabs/.local/share/icons/omnihub.png"
-        if os.path.exists(icon_path):
+        icon_path = get_app_icon_path()
+        if icon_path and os.path.exists(icon_path):
             self.setWindowIcon(QtGui.QIcon(icon_path))
 
         self.theme_mode = "system"
@@ -1953,17 +2066,21 @@ class MainWindow(QMainWindow):
         lc_title.setStyleSheet("color: #64748B; font-size: 11px; font-weight: 800;")
         lc_layout.addWidget(lc_title)
 
-        btn_term = QPushButton("💻 Deepin Terminal")
-        btn_term.clicked.connect(lambda: subprocess.Popen(["deepin-terminal"]))
+        btn_term = QPushButton("💻 Terminal")
+        btn_term.clicked.connect(self.open_terminal)
         lc_layout.addWidget(btn_term)
+
+        btn_files = QPushButton("📁 Files")
+        btn_files.clicked.connect(self.open_file_manager)
+        lc_layout.addWidget(btn_files)
+
+        btn_chrome = QPushButton("🌐 Browser")
+        btn_chrome.clicked.connect(self.open_browser)
+        lc_layout.addWidget(btn_chrome)
 
         btn_anti = QPushButton("🪐 Antigravity")
         btn_anti.clicked.connect(lambda: subprocess.Popen(["antigravity"], shell=True))
         lc_layout.addWidget(btn_anti)
-
-        btn_chrome = QPushButton("🌐 Google Chrome")
-        btn_chrome.clicked.connect(lambda: subprocess.Popen(["google-chrome"]))
-        lc_layout.addWidget(btn_chrome)
 
         lc_layout.addStretch()
         layout.addWidget(launch_card)
@@ -2205,7 +2322,10 @@ class MainWindow(QMainWindow):
             self.bar_ram.setValue(int(mem.percent))
             self.lbl_ram_val.setText(f"{mem_used:.2f} GB / {mem_total:.2f} GB ({mem.percent}%)")
 
-            disk = psutil.disk_usage('/')
+            root_drive = os.path.splitdrive(os.path.abspath("."))[0] or "/"
+            if platform.system() == "Windows" and not root_drive.endswith("\\"):
+                root_drive += "\\"
+            disk = psutil.disk_usage(root_drive)
             disk_used = disk.used / (1024 ** 3)
             disk_total = disk.total / (1024 ** 3)
             self.bar_disk.setValue(int(disk.percent))
@@ -2214,11 +2334,38 @@ class MainWindow(QMainWindow):
             boot = time.time() - psutil.boot_time()
             hours = int(boot // 3600)
             mins = int((boot % 3600) // 60)
+
+            sys_os = f"{platform.system()} {platform.release()}"
+            if platform.system() == "Linux":
+                try:
+                    with open("/etc/os-release") as f:
+                        for line in f:
+                            if line.startswith("PRETTY_NAME="):
+                                sys_os = line.split("=", 1)[1].strip().strip('"')
+                                break
+                except Exception:
+                    pass
+            elif platform.system() == "Darwin":
+                try:
+                    v = subprocess.check_output(["sw_vers", "-productVersion"], text=True, stderr=subprocess.DEVNULL).strip()
+                    sys_os = f"macOS {v}"
+                except Exception:
+                    sys_os = f"macOS ({platform.machine()})"
+            elif platform.system() == "Windows":
+                sys_os = f"Windows {platform.release()} ({platform.version()})"
+
+            if platform.system() == "Windows":
+                de_name = "Windows Shell (Explorer)"
+            elif platform.system() == "Darwin":
+                de_name = "Aqua / Cocoa Desktop"
+            else:
+                de_name = os.environ.get("XDG_CURRENT_DESKTOP") or "Linux Desktop"
+
             self.lbl_host_specs.setText(
-                f"• <b>Operating System:</b> Deepin 25 ({os.uname().sysname} {os.uname().release})<br/>"
-                f"• <b>Desktop Environment:</b> Deepin DDE 25 (Fashion Dock Active)<br/>"
+                f"• <b>Operating System:</b> {sys_os}<br/>"
+                f"• <b>Desktop Environment:</b> {de_name}<br/>"
                 f"• <b>System Uptime:</b> {hours} hours, {mins} minutes<br/>"
-                f"• <b>Node.js Runtime:</b> v24.22.3 (npm v11.19.1)<br/>"
+                f"• <b>Python Runtime:</b> v{platform.python_version()} ({platform.machine()})<br/>"
                 f"• <b>OmniRoute Engine:</b> v3.8.54 ({OMNIROUTE_DIR})"
             )
         except Exception:
@@ -2236,8 +2383,36 @@ class MainWindow(QMainWindow):
             self.doctor_worker.start()
 
     def open_dashboard(self):
-        subprocess.Popen(["xdg-open", OMNIROUTE_DASHBOARD])
+        QDesktopServices.openUrl(QUrl(OMNIROUTE_DASHBOARD))
         self.log_msg(f"Opened web dashboard at {OMNIROUTE_DASHBOARD}")
+
+    def open_terminal(self):
+        sys_plat = platform.system()
+        if sys_plat == "Windows":
+            subprocess.Popen(["cmd.exe", "/c", "start", "cmd.exe"])
+        elif sys_plat == "Darwin":
+            subprocess.Popen(["open", "-a", "Terminal"])
+        else:
+            for term in ["deepin-terminal", "gnome-terminal", "konsole", "xfce4-terminal", "alacritty", "xterm"]:
+                if shutil.which(term):
+                    subprocess.Popen([term])
+                    return
+            subprocess.Popen(["x-terminal-emulator"])
+
+    def open_browser(self):
+        webbrowser.open("https://google.com")
+
+    def open_file_manager(self):
+        sys_plat = platform.system()
+        if sys_plat == "Windows":
+            subprocess.Popen(["explorer.exe", os.path.expanduser("~")])
+        elif sys_plat == "Darwin":
+            subprocess.Popen(["open", os.path.expanduser("~")])
+        else:
+            for fm in ["dde-file-manager", "nautilus", "dolphin", "thunar", "nemo", "xdg-open"]:
+                if shutil.which(fm):
+                    subprocess.Popen([fm, os.path.expanduser("~")])
+                    return
 
     def copy_api_url(self):
         QApplication.clipboard().setText(f"{OMNIROUTE_BASE}/v1")
@@ -2290,8 +2465,8 @@ class MainWindow(QMainWindow):
 
     # System Tray
     def setup_tray(self):
-        icon_path = "/home/sojiblabs/.local/share/icons/omnihub.png"
-        if not os.path.exists(icon_path):
+        icon_path = get_app_icon_path()
+        if not icon_path or not os.path.exists(icon_path):
             return
 
         self.tray = QSystemTrayIcon(QtGui.QIcon(icon_path), self)
@@ -2316,7 +2491,29 @@ class MainWindow(QMainWindow):
 
 
 def main():
-    os.environ["QT_QPA_PLATFORM"] = "xcb"
+    if "--version" in sys.argv or "-v" in sys.argv:
+        print("OmniHub 3.0.0 — Precision AI Gateway & System Studio")
+        return 0
+    if "--help" in sys.argv or "-h" in sys.argv:
+        print("""OmniHub 3.0.0 — Precision AI Gateway & System Studio
+
+Cross-Platform AI Gateway Control Center & System Studio for Linux, Windows & macOS.
+
+Usage:
+  omnihub [options]
+
+Options:
+  -h, --help       Show this help message and exit
+  -v, --version    Show version information and exit
+  --page <name>    Open directly to page (start, ai, gateway, system, tools, about)
+  --restart        Restart the OmniRoute background service
+""")
+        return 0
+
+    if platform.system() == "Linux" and "QT_QPA_PLATFORM" not in os.environ:
+        if os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+            os.environ["QT_QPA_PLATFORM"] = "xcb"
+
     app = QApplication(sys.argv)
     app.setApplicationName("omnihub")
     app.setDesktopFileName("omnihub.desktop")

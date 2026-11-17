@@ -127,9 +127,41 @@ def _dde_config_is_dark() -> Optional[bool]:
     return None
 
 
+def _windows_is_dark() -> Optional[bool]:
+    """Read Windows personal theme registry key for dark mode."""
+    try:
+        import winreg
+
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+        )
+        val, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+        return val == 0
+    except Exception:
+        return None
+
+
+def _macos_is_dark() -> Optional[bool]:
+    """Read macOS AppleInterfaceStyle for dark mode."""
+    try:
+        out = subprocess.check_output(
+            ["defaults", "read", "-g", "AppleInterfaceStyle"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip().lower()
+        return "dark" in out
+    except Exception:
+        return None
+
+
 def probe_sources() -> List[Tuple[str, Optional[bool]]]:
     """Return every probe result as ``(source_name, is_dark_or_None)``."""
     probes: List[Tuple[str, Optional[bool]]] = []
+
+    # Windows & macOS platform probes
+    probes.append(("windows-registry", _windows_is_dark()))
+    probes.append(("macos-defaults", _macos_is_dark()))
 
     # GNOME / Deepin wrap: the modern colour-scheme key.
     probes.append(("gsettings:gnome", _gsettings_says_dark("org.gnome.desktop.interface", "color-scheme")))

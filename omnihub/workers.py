@@ -65,11 +65,17 @@ class Task(QRunnable):
         try:
             result = self._fn()
         except Exception as exc:  # noqa: BLE001
-            self.signals.failed.emit(f"{type(exc).__name__}: {exc}")
+            try:
+                self.signals.failed.emit(f"{type(exc).__name__}: {exc}")
+            except RuntimeError:
+                pass
             return
         if self._cancelled.is_set():
             return
-        self.signals.done.emit(result)
+        try:
+            self.signals.done.emit(result)
+        except RuntimeError:
+            pass
 
 
 class TaskGroup(QObject):
@@ -513,21 +519,30 @@ class SystemSampler:
 
     @staticmethod
     def _host_info() -> Dict:
-        uname = os.uname()
+        import platform
+
         info = {
-            "system": uname.sysname,
-            "release": uname.release,
-            "machine": uname.machine,
-            "hostname": uname.nodename,
-            "python": os.sys.version.split()[0],
+            "system": platform.system(),
+            "release": platform.release(),
+            "machine": platform.machine(),
+            "hostname": platform.node(),
+            "python": platform.python_version(),
+            "pretty_name": f"{platform.system()} {platform.release()}",
         }
         try:
-            with open("/etc/os-release", "r", encoding="utf-8") as handle:
-                for line in handle:
-                    if line.startswith("PRETTY_NAME="):
-                        info["pretty_name"] = line.split("=", 1)[1].strip().strip('"')
-                        break
-        except OSError:
+            if platform.system() == "Linux" and os.path.exists("/etc/os-release"):
+                with open("/etc/os-release", "r", encoding="utf-8") as handle:
+                    for line in handle:
+                        if line.startswith("PRETTY_NAME="):
+                            info["pretty_name"] = line.split("=", 1)[1].strip().strip('"')
+                            break
+            elif platform.system() == "Darwin":
+                import subprocess
+                out = subprocess.check_output(["sw_vers", "-productVersion"], text=True, stderr=subprocess.DEVNULL).strip()
+                info["pretty_name"] = f"macOS {out}"
+            elif platform.system() == "Windows":
+                info["pretty_name"] = f"Windows {platform.release()} ({platform.version()})"
+        except Exception:
             pass
         try:
             with open("/proc/cpuinfo", "r", encoding="utf-8") as handle:

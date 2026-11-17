@@ -22,7 +22,8 @@ from .paths import LOG_FILE, ensure_dirs
 __all__ = ["main", "run"]
 
 LOGGER_NAME = "omnihub"
-_IPC_SERVER_NAME = f"{APP_ID}-single-instance-{os.getuid()}"
+_UID = os.getuid() if hasattr(os, "getuid") else os.environ.get("USERNAME", "user")
+_IPC_SERVER_NAME = f"{APP_ID}-single-instance-{_UID}"
 
 
 # --------------------------------------------------------------------- setup

@@ -3,7 +3,7 @@ Type=Application
 Name=OmniHub
 GenericName=AI Gateway & System Hub
 Comment=SojibLabs OmniRoute & System Control Center
-Exec=/home/sojiblabs/.local/bin/omnihub %U
+Exec=omnihub %U
 Icon=omnihub
 Terminal=false
 Categories=Development;Utility;System;Network;
@@ -20,12 +20,12 @@ Exec=xdg-open http://localhost:20128/dashboard
 
 [Desktop Action restart_service]
 Name=Restart OmniRoute Service
-Exec=/home/sojiblabs/.local/bin/omnihub --restart
+Exec=omnihub --restart
 
 [Desktop Action ai_studio]
 Name=Open AI Studio
-Exec=/home/sojiblabs/.local/bin/omnihub --page ai
+Exec=omnihub --page ai
 
 [Desktop Action settings]
 Name=Open OmniHub Settings
-Exec=/home/sojiblabs/.local/bin/omnihub --page settings
+Exec=omnihub --page settings
