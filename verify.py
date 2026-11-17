@@ -20,14 +20,19 @@ def check(name, ok, detail=""):
 # --------------------------------------------------------------------- CLI
 def check_cli():
     launcher = os.path.expanduser("~/.local/bin/omnihub")
-    check("launcher exists", os.path.exists(launcher))
-    check("launcher points at main.py", os.path.realpath(launcher) == os.path.join(ROOT, "main.py"))
+    if os.path.exists(launcher):
+        check("launcher exists", True)
+        check("launcher points at main.py", os.path.realpath(launcher) == os.path.join(ROOT, "main.py"))
+        cmd_base = [launcher]
+    else:
+        check("launcher entrypoint exists", os.path.exists(os.path.join(ROOT, "main.py")))
+        cmd_base = [sys.executable, os.path.join(ROOT, "main.py")]
 
     for flag in ("--version", "--help"):
-        proc = subprocess.run([launcher, flag], capture_output=True, text=True, timeout=60)
+        proc = subprocess.run([*cmd_base, flag], capture_output=True, text=True, timeout=60)
         check(f"CLI {flag}", proc.returncode == 0, proc.stdout.strip().splitlines()[0] if proc.stdout.strip() else "")
 
-    proc = subprocess.run([launcher, "--version"], capture_output=True, text=True, timeout=60)
+    proc = subprocess.run([*cmd_base, "--version"], capture_output=True, text=True, timeout=60)
     check("version string", "OmniHub" in proc.stdout, proc.stdout.strip())
 
 

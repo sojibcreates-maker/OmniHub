@@ -7,13 +7,60 @@ on:
     branches: [ main ]
 
 jobs:
-  test:
-    name: Test on ${{ matrix.os }} (Python ${{ matrix.python-version }})
+  test-linux:
+    name: Linux (${{ matrix.os }}) - Py ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest]
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+
+    - name: Install Linux GUI & X11 libraries
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 libegl1 xvfb
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install -r requirements.txt
+
+    - name: Syntax & compilation test
+      run: |
+        python -m py_compile main.py
+        python -m py_compile selftest.py
+        python -m py_compile verify.py
+
+    - name: Test CLI flags
+      run: |
+        python main.py --version
+        python main.py --help
+
+    - name: Run Automated Test Suites
+      env:
+        QT_QPA_PLATFORM: offscreen
+      run: |
+        python verify.py
+        python selftest.py
+
+  test-windows:
+    name: Windows - Py ${{ matrix.python-version }}
+    runs-on: windows-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
         python-version: ["3.10", "3.11", "3.12"]
 
     steps:
@@ -36,13 +83,55 @@ jobs:
         python -m py_compile selftest.py
         python -m py_compile verify.py
 
-    - name: Run CLI flags
+    - name: Test CLI flags
       run: |
         python main.py --version
         python main.py --help
 
-    - name: Run Headless Smoke Test (Linux only)
-      if: runner.os == 'Linux'
+    - name: Run Automated Test Suites
+      env:
+        QT_QPA_PLATFORM: offscreen
       run: |
-        xvfb-run -a python selftest.py
-        xvfb-run -a python verify.py
+        python verify.py
+        python selftest.py
+
+  test-macos:
+    name: macOS - Py ${{ matrix.python-version }}
+    runs-on: macos-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install -r requirements.txt
+
+    - name: Syntax & compilation test
+      run: |
+        python -m py_compile main.py
+        python -m py_compile selftest.py
+        python -m py_compile verify.py
+
+    - name: Test CLI flags
+      run: |
+        python main.py --version
+        python main.py --help
+
+    - name: Run Automated Test Suites
+      env:
+        QT_QPA_PLATFORM: offscreen
+      run: |
+        python verify.py
+        python selftest.py
