@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use OmniHub in your research or project, please cite it as below."
+authors:
+  - family-names: "Hossain"
+    given-names: "Md Sojib"
+    orcid: ""
+title: "OmniHub: Ultra-Modern Precision AI Gateway, Installer & System Studio"
+version: 3.0.0
+date-released: 2026-11-17
+url: "https://github.com/sojibcreates-maker/OmniHub"
