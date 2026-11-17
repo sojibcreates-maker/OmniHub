@@ -9,6 +9,17 @@ Designed and engineered by **[Md Sojib Hossain](https://github.com/sojibcreates-
 
 ---
 
+## 📥 Download Software Packages (v3.0.0)
+
+| OS / Package | Download Link | Installation |
+| :--- | :--- | :--- |
+| 🐧 **Deepin / Debian / Ubuntu** | [**omnihub_3.0.0_amd64.deb** (57.5 MB)](https://github.com/sojibcreates-maker/OmniHub/releases/download/v3.0.0/omnihub_3.0.0_amd64.deb) | Native `.deb` Installer (Double-click to install) |
+| 🐧 **Linux Standalone Executable** | [**OmniHub-v3.0.0-Linux-Standalone-x86_64** (58.3 MB)](https://github.com/sojibcreates-maker/OmniHub/releases/download/v3.0.0/OmniHub-v3.0.0-Linux-Standalone-x86_64) | Single Binary (No Python required) |
+| 🪟 **Windows 10 & 11** | [**OmniHub-v3.0.0-Windows-Portable.zip** (460 KB)](https://github.com/sojibcreates-maker/OmniHub/releases/download/v3.0.0/OmniHub-v3.0.0-Windows-Portable.zip) | Portable Package (Run `run.bat`) |
+| 🌐 **Release Hub** | [**Browse All Releases & Checksums**](https://github.com/sojibcreates-maker/OmniHub/releases/tag/v3.0.0) | Full Assets & Changelog |
+
+---
+
 ## 🌟 Platforms Supported
 
 | Platform | Supported Versions | Launcher / Installer |
