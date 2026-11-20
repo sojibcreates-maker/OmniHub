@@ -169,10 +169,116 @@ class ServiceWorker(QThread):
         return None
 
     def _kill_processes(self) -> None:
-        patterns = ("run-next.mjs", "next-server", "omniroute")
-        for pattern in patterns:
-            subprocess.run(["pkill", "-f", pattern], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(0.8)
+        port = 20128
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(self.base_url)
+            if parsed.port:
+                port = parsed.port
+            elif parsed.scheme == "https":
+                port = 443
+            elif parsed.scheme == "http":
+                port = 80
+        except Exception:
+            port = 20128
+
+        my_pid = os.getpid()
+        my_ppid = os.getppid()
+        pids_to_kill = set()
+        ports_to_check = {20128}
+        if port and isinstance(port, int):
+            ports_to_check.add(port)
+
+        try:
+            import psutil
+            for conn in psutil.net_connections(kind="inet"):
+                if conn.laddr and conn.laddr.port in ports_to_check and conn.pid:
+                    if conn.pid not in (my_pid, my_ppid):
+                        pids_to_kill.add(conn.pid)
+
+            target_real = os.path.realpath(self.omniroute_dir) if self.omniroute_dir and os.path.exists(self.omniroute_dir) else None
+            for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+                try:
+                    pid = proc.info["pid"]
+                    if pid in (my_pid, my_ppid):
+                        continue
+                    name = (proc.info["name"] or "").lower()
+                    cmdline = " ".join(proc.info["cmdline"] or [])
+                    cwd = ""
+                    try:
+                        cwd = proc.cwd()
+                    except Exception:
+                        pass
+
+                    is_in_target = False
+                    if target_real and cwd:
+                        try:
+                            if os.path.realpath(cwd) == target_real:
+                                is_in_target = True
+                        except Exception:
+                            pass
+
+                    if is_in_target and any(k in name for k in ("node", "npm", "bun", "next", "esbuild", "sh", "bash")):
+                        pids_to_kill.add(pid)
+                    elif any(pat in cmdline for pat in ("run-next.mjs", "next-server", "omniroute", "start-omniroute.sh")):
+                        pids_to_kill.add(pid)
+                    elif self.omniroute_dir and self.omniroute_dir in cmdline and any(k in name for k in ("node", "npm", "bun", "next")):
+                        pids_to_kill.add(pid)
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+
+            all_pids = set(pids_to_kill)
+            for pid in list(pids_to_kill):
+                try:
+                    p = psutil.Process(pid)
+                    for child in p.children(recursive=True):
+                        if child.pid not in (my_pid, my_ppid):
+                            all_pids.add(child.pid)
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+
+            for pid in all_pids:
+                try:
+                    psutil.Process(pid).terminate()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+
+            if all_pids:
+                alive = []
+                for pid in all_pids:
+                    try:
+                        p = psutil.Process(pid)
+                        if p.is_running():
+                            alive.append(p)
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+                if alive:
+                    _, still_alive = psutil.wait_procs(alive, timeout=1.2)
+                    for p in still_alive:
+                        try:
+                            p.kill()
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            pass
+        except Exception:
+            pass
+
+        import platform
+        if platform.system() != "Windows":
+            for p in ports_to_check:
+                try:
+                    subprocess.run(["fuser", "-k", "-9", f"{p}/tcp"],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                except Exception:
+                    pass
+                try:
+                    subprocess.run(f"lsof -ti :{p} | xargs -r kill -9",
+                                   shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                except Exception:
+                    pass
+            for pattern in ("run-next.mjs", "next-server", "omniroute"):
+                subprocess.run(["pkill", "-9", "-f", pattern], check=False,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(0.5)
 
     # -- thread body -------------------------------------------------------
 
