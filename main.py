@@ -2995,12 +2995,12 @@ class MainWindow(QMainWindow):
         mid_row.addWidget(service_card, 4)
 
         cred_card, cred_lay = self._card()
-        copy_btn = IconButton("copy", "Copy endpoint", 26, 14)
+        copy_btn = IconButton("copy", "Copy API endpoint", 26, 14)
         copy_btn.clicked.connect(self.copy_api_url)
         self._register(copy_btn)
         self._card_head(cred_lay, "CONNECTION & ENDPOINTS", copy_btn)
 
-        cred_lay.addWidget(label("GATEWAY BASE URL / HOST", "keyLabel", 9.5, QFont.DemiBold, spacing=0.8))
+        cred_lay.addWidget(label("GATEWAY WEB DASHBOARD URL", "keyLabel", 9.5, QFont.DemiBold, spacing=0.8))
         gw_url_row = QHBoxLayout()
         gw_url_row.setSpacing(6)
         self.txt_gateway_url = QLineEdit(OMNIROUTE_BASE)
@@ -3011,19 +3011,20 @@ class MainWindow(QMainWindow):
 
         self.btn_apply_url = make_button("Save", "check", "secondary", 28, self.on_save_gateway_url)
         self.btn_reset_url = make_button("Default", "restart", "ghost", 28, self.on_reset_gateway_url)
+        self.btn_open_web = make_button("Open Web UI", "globe", "secondary", 28, self.open_dashboard)
         gw_url_row.addWidget(self.btn_apply_url)
         gw_url_row.addWidget(self.btn_reset_url)
+        gw_url_row.addWidget(self.btn_open_web)
         cred_lay.addLayout(gw_url_row)
 
         cred_lay.addSpacing(4)
-        cred_lay.addWidget(label("OPENAI-COMPATIBLE API (LOCAL INFERENCE)", "keyLabel", 9.5, QFont.DemiBold, spacing=0.8))
+        cred_lay.addWidget(label("OPENAI-COMPATIBLE API ENDPOINT (FOR CURSOR, VS CODE, PYTHON)", "keyLabel", 9.5, QFont.DemiBold, spacing=0.8))
 
         endpoint_row = QHBoxLayout()
         endpoint_row.setSpacing(6)
         self.txt_api_base = self._mono_field(f"{OMNIROUTE_BASE}/v1")
         endpoint_row.addWidget(self.txt_api_base, 1)
-        endpoint_row.addWidget(make_button("Copy", None, "secondary", 28, self.copy_api_url))
-        endpoint_row.addWidget(make_button("Dashboard", "globe", "secondary", 28, self.open_dashboard))
+        endpoint_row.addWidget(make_button("Copy API URL", "copy", "secondary", 28, self.copy_api_url))
         cred_lay.addLayout(endpoint_row)
 
         auth_row = QHBoxLayout()
@@ -3035,7 +3036,7 @@ class MainWindow(QMainWindow):
         auth_row.addWidget(label("CHANGEME", "mono", 11, mono=True))
         auth_row.addStretch()
         cred_lay.addLayout(auth_row)
-        cred_lay.addWidget(label("Supports localhost:20128, 127.0.0.1, custom ports, or remote gateways.", "hint", 10))
+        cred_lay.addWidget(label("Note: /v1 is for IDEs/API clients with 'Bearer local' auth, not a web page.", "hint", 10))
         cred_lay.addStretch()
         mid_row.addWidget(cred_card, 5)
         lay.addLayout(mid_row)
@@ -3578,8 +3579,13 @@ class MainWindow(QMainWindow):
         self.doctor_worker.start()
 
     def open_dashboard(self):
-        QDesktopServices.openUrl(QUrl(OMNIROUTE_DASHBOARD))
-        self.log_msg(f"Opened {OMNIROUTE_DASHBOARD}", "ok")
+        if hasattr(self, "_is_online") and not self._is_online:
+            self.show_toast("Gateway is offline. Click 'Start' first to launch it.", "warn")
+            self.log_msg("Cannot open dashboard: OmniRoute is offline. Click 'Start' first.", "warn")
+            return
+        url = OMNIROUTE_DASHBOARD
+        QDesktopServices.openUrl(QUrl(url))
+        self.log_msg(f"Opened {url}", "ok")
         self.show_toast("Opening web dashboard", "info")
 
     def open_terminal(self):
